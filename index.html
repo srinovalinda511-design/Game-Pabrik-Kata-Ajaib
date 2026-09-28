@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pabrik Kata Ajaib</title>
+    <!-- Memuat Tailwind CSS untuk layout & styling responsif -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Memuat Font Google Fredoka untuk desain ramah anak -->
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Fredoka', sans-serif;
+            background-color: #f0fdfa;
+            background-image: radial-gradient(#bae6fd 2px, transparent 2px);
+            background-size: 30px 30px;
+            overflow: hidden;
+            touch-action: none; /* Mencegah pull-to-refresh & gestures bawaan browser */
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* Animasi Getar untuk jawaban salah */
+        @keyframes shake {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            10%, 30%, 50%, 70%, 90% { transform: translate(-12px, 0) scale(1.02); }
+            20%, 40%, 60%, 80% { transform: translate(12px, 0) scale(1.02); }
+        }
+        .shake-animation {
+            animation: shake 0.5s ease-in-out;
+            border-color: #ef4444 !important;
+            background-color: #fef2f2 !important;
+        }
+
+        /* Animasi Kemunculan Kartu */
+        @keyframes popIn {
+            0% { transform: scale(0.4); opacity: 0; }
+            70% { transform: scale(1.08); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .pop-in {
+            animation: popIn 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        /* Animasi Feedback Teks Melayang */
+        @keyframes floatUpFade {
+            0% { transform: translate(-50%, -50%) scale(0.8); opacity: 0; }
+            30% { opacity: 1; transform: translate(-50%, -70%) scale(1.1); }
+            100% { transform: translate(-50%, -120%) scale(1.3); opacity: 0; }
+        }
+        .feedback-text {
+            position: fixed;
+            pointer-events: none;
+            font-weight: 700;
+            font-size: 2rem;
+            z-index: 100;
+            animation: floatUpFade 1.1s forwards;
+            text-shadow: 2px 2px 0px #ffffff, -2px -2px 0px #ffffff, 2px -2px 0px #ffffff, -2px 2px 0px #ffffff;
+        }
+
+        /* Animasi Reward Bintang */
+        @keyframes starBurst {
+            0% { transform: translate(-50%, -50%) scale(0) rotate(0deg); opacity: 0.2; }
+            50% { transform: translate(-50%, -50%) scale(1.4) rotate(180deg); opacity: 1; }
+            100% { transform: translate(-50%, -50%) scale(2) rotate(360deg); opacity: 0; }
+        }
+        .star-reward {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            font-size: 110px;
+            pointer-events: none;
+            z-index: 120;
+            animation: starBurst 1.3s ease-out forwards;
+        }
+
+        /* Card Drag Styling */
+        #word-card {
+            touch-action: none;
+            user-select: none;
+            cursor: grab;
+            will-change: transform;
+        }
+        #word-card:active {
+            cursor: grabbing;
+        }
+        
+        /* Conveyor belt visual */
+        .conveyor-belt {
+            border-bottom: 6px dashed #94a3b8;
+            padding-bottom: 12px;
+        }
+
+        /* Highlighting Keranjang Saat Drag */
+        .basket-zone {
+            transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+        }
+        .basket-zone.drag-over {
+            transform: scale(1.08);
+            box-shadow: 0 12px 25px -3px rgba(0, 0, 0, 0.25);
+            filter: brightness(1.1);
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col items-center justify-between p-3 md:p-6 pb-6 select-none">
+
+    <!-- Header: Info Level dan Skor -->
+    <header class="w-full max-w-2xl flex justify-between items-center bg-white rounded-3xl px-5 py-3 shadow-md border-4 border-blue-100 z-10">
+        <div class="flex flex-col">
+            <h1 class="text-xl md:text-2xl font-bold text-blue-600 leading-tight">Pabrik Kata Ajaib ✨</h1>
+            <span id="level-display" class="text-xs md:text-sm font-bold text-gray-500">Level: 1 (Kata Dasar)</span>
+        </div>
+        <div class="bg-amber-300 rounded-full px-5 py-1.5 border-4 border-amber-400 shadow-inner flex items-center gap-2">
+            <span class="text-amber-700 font-bold text-sm md:text-base">⭐ Skor:</span>
+            <span id="score-display" class="text-xl md:text-2xl font-bold text-white drop-shadow-md">0</span>
+        </div>
+    </header>
+
+    <!-- Area Mesin / Arena Pemain -->
+    <main class="w-full flex-1 flex flex-col items-center justify-center relative z-20 my-2">
+        <div class="text-center mb-3 bg-white/90 px-4 py-1.5 rounded-full shadow-sm text-gray-700 font-bold text-xs md:text-sm border border-sky-200">
+            👆 Geser kata ke keranjang yang tepat!
+        </div>
+
+        <!-- Area Muncul Kata -->
+        <div id="spawn-area" class="w-full max-w-md h-36 flex items-center justify-center conveyor-belt relative">
+            <!-- Kartu Kata (Di-drag oleh pemain) -->
+            <div id="word-card" class="absolute bg-white rounded-2xl shadow-xl border-4 border-sky-300 px-8 py-4 flex flex-col items-center justify-center pop-in z-30 min-w-[200px]" style="display: none;">
+                <span id="english-word" class="text-3xl md:text-4xl font-extrabold text-gray-800 tracking-wide">Word</span>
+                <span id="indo-translation" class="text-base md:text-lg font-bold text-sky-600 mt-1">(Terjemahan)</span>
+            </div>
+        </div>
+    </main>
+
+    <!-- Area Keranjang Kategori (Drop Zones) -->
+    <footer class="w-full max-w-3xl grid grid-cols-3 gap-2 md:gap-6 z-10">
+        <!-- Keranjang Noun -->
+        <div id="basket-noun" class="basket-zone flex flex-col items-center justify-end bg-blue-100 border-4 border-blue-400 rounded-b-3xl rounded-t-2xl pb-3 pt-12 md:pt-14 shadow-md relative" data-type="noun">
+            <div class="absolute -top-5 bg-blue-500 text-white px-3 md:px-5 py-1 rounded-full font-bold shadow border-2 border-white text-xs md:text-base">
+                Noun
+            </div>
+            <span class="text-[11px] md:text-xs font-bold text-blue-700 mb-1">(Kata Benda)</span>
+            <div class="text-3xl md:text-5xl">📦</div>
+        </div>
+
+        <!-- Keranjang Verb -->
+        <div id="basket-verb" class="basket-zone flex flex-col items-center justify-end bg-amber-100 border-4 border-amber-400 rounded-b-3xl rounded-t-2xl pb-3 pt-12 md:pt-14 shadow-md relative" data-type="verb">
+            <div class="absolute -top-5 bg-amber-500 text-white px-3 md:px-5 py-1 rounded-full font-bold shadow border-2 border-white text-xs md:text-base">
+                Verb
+            </div>
+            <span class="text-[11px] md:text-xs font-bold text-amber-700 mb-1">(Kata Kerja)</span>
+            <div class="text-3xl md:text-5xl">🏃</div>
+        </div>
+
+        <!-- Keranjang Adjective -->
+        <div id="basket-adjective" class="basket-zone flex flex-col items-center justify-end bg-emerald-100 border-4 border-emerald-400 rounded-b-3xl rounded-t-2xl pb-3 pt-12 md:pt-14 shadow-md relative" data-type="adjective">
+            <div class="absolute -top-5 bg-emerald-500 text-white px-3 md:px-5 py-1 rounded-full font-bold shadow border-2 border-white text-xs md:text-base">
+                Adjective
+            </div>
+            <span class="text-[11px] md:text-xs font-bold text-emerald-700 mb-1">(Kata Sifat)</span>
+            <div class="text-3xl md:text-5xl">✨</div>
+        </div>
+    </footer>
+
+    <!-- Modal Edukasi (Muncul Saat Jawaban Salah) -->
+    <div id="explanation-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div id="explanation-card" class="bg-white rounded-3xl p-6 max-w-md w-full flex flex-col items-center text-center shadow-2xl border-4 border-amber-300 transform scale-90 opacity-0 transition-all duration-300">
+            <div class="text-5xl mb-2">💡</div>
+            <h2 class="text-xl md:text-2xl font-bold text-amber-600 mb-1">Yuk, Pelajari Lagi!</h2>
+            
+            <div class="w-full bg-slate-50 rounded-2xl p-4 my-3 border-2 border-slate-200 flex flex-col items-center">
+                <div class="flex items-center gap-2 text-2xl font-black text-slate-800">
+                    <span id="explain-word">Word</span>
+                    <span id="explain-trans" class="text-base font-bold text-sky-600">-(artinya)-</span>
+                </div>
+                <p id="explain-text" class="text-sm md:text-base text-gray-700 mt-2 leading-relaxed">
+                    Penjelasan mengapa kata ini masuk kategori tertentu.
+                </p>
+            </div>
+
+            <div id="explain-category-box" class="w-full bg-sky-100 text-sky-800 font-bold p-3 rounded-xl text-xs md:text-sm mb-4 border border-sky-300">
+                Kategori Benar: <span id="explain-correct-cat" class="underline uppercase">Noun</span>
+            </div>
+
+            <button onclick="closeExplanation()" class="bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 px-8 rounded-full shadow-lg border-b-4 border-amber-700 active:translate-y-0.5 active:border-b-0 transition-all text-base w-full">
+                Oke, Aku Paham! 👍
+            </button>
+        </div>
+    </div>
+
+    <!-- Modal Kemenangan Game -->
+    <div id="win-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div id="win-content" class="bg-white rounded-3xl p-8 max-w-sm w-full flex flex-col items-center text-center shadow-2xl border-4 border-yellow-300 transform scale-90 opacity-0 transition-all duration-300">
+            <div class="text-6xl mb-3 animate-bounce">🏆</div>
+            <h2 class="text-3xl font-extrabold text-amber-500 mb-1">Selamat!</h2>
+            <p class="text-lg font-bold text-gray-700 mb-6">Kamu sekarang adalah<br><span class="text-blue-600 text-2xl font-black">Master Kata! 🎉</span></p>
+            <button onclick="resetGame()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3.5 px-8 rounded-full shadow-lg border-b-4 border-blue-700 active:translate-y-1 active:border-b-0 transition-all text-lg w-full">
+                Main Lagi! 🔄
+            </button>
+        </div>
+    </div>
+
+    <!-- Container efek visual (Bintang & Teks Melayang) -->
+    <div id="effects-container" class="fixed inset-0 pointer-events-none z-40"></div>
+
+    <script>
+        // Bank Kata Lengkap (45 Kata - 15 Noun, 15 Verb, 15 Adjective)
+        const wordBank = [
+            // --- NOUN (Kata Benda) ---
+            // Level 1 (Kata Dasar)
+            { word: "Cat", translation: "Kucing", type: "noun", level: 1, hint: "Kucing adalah nama hewan. Semua nama hewan, manusia, tempat, atau benda tergolong Kata Benda (Noun)." },
+            { word: "Dog", translation: "Anjing", type: "noun", level: 1, hint: "Anjing adalah nama hewan, sehingga termasuk Kata Benda (Noun)." },
+            { word: "Book", translation: "Buku", type: "noun", level: 1, hint: "Buku adalah objek/benda nyata yang bisa disentuh, jadi masuk kategori Noun." },
+            { word: "Apple", translation: "Apel", type: "noun", level: 1, hint: "Apel adalah nama buah/benda, sehingga termasuk Noun (Kata Benda)." },
+            { word: "Sun", translation: "Matahari", type: "noun", level: 1, hint: "Matahari adalah objek di alam (benda langit), jadi termasuk Noun." },
+            { word: "Car", translation: "Mobil", type: "noun", level: 1, hint: "Mobil adalah nama kendaraan/benda, tergolong sebagai Noun." },
+            { word: "Tree", translation: "Pohon", type: "noun", level: 1, hint: "Pohon adalah nama tumbuhan/benda alam, sehingga masuk kategori Noun." },
+            { word: "House", translation: "Rumah", type: "noun", level: 1, hint: "Rumah adalah nama tempat/bangunan, tergolong Kata Benda (Noun)." },
+            // Level 2 (Kata Lanjutan)
+            { word: "Elephant", translation: "Gajah", type: "noun", level: 2, hint: "Gajah adalah nama hewan besar, sehingga masuk kategori Noun (Kata Benda)." },
+            { word: "Hospital", translation: "Rumah Sakit", type: "noun", level: 2, hint: "Rumah Sakit adalah nama bangunan/tempat, jadi tergolong Noun." },
+            { word: "Teacher", translation: "Guru", type: "noun", level: 2, hint: "Guru adalah nama profesi/orang. Nama orang termasuk Noun." },
+            { word: "Computer", translation: "Komputer", type: "noun", level: 2, hint: "Komputer adalah objek teknologi/benda, sehingga tergolong Noun." },
+            { word: "Mountain", translation: "Gunung", type: "noun", level: 2, hint: "Gunung adalah nama objek alam/tempat, tergolong Noun." },
+            { word: "Butterfly", translation: "Kupu-kupu", type: "noun", level: 2, hint: "Kupu-kupu adalah nama serangga/hewan, jadi termasuk Noun." },
+            { word: "Airplane", translation: "Pesawat", type: "noun", level: 2, hint: "Pesawat adalah nama kendaraan udara, tergolong Noun (Kata Benda)." },
+
+            // --- VERB (Kata Kerja) ---
+            // Level 1 (Kata Dasar)
+            { word: "Run", translation: "Lari", type: "verb", level: 1, hint: "Lari adalah aktivitas atau gerakan fisik yang dilakukan, jadi tergolong Kata Kerja (Verb)." },
+            { word: "Eat", translation: "Makan", type: "verb", level: 1, hint: "Makan adalah tindakan/kegiatan mengonsumsi makanan, sehingga tergolong Verb." },
+            { word: "Sleep", translation: "Tidur", type: "verb", level: 1, hint: "Tidur adalah tindakan beristirahat yang dilakukan tubuh, jadi masuk kategori Verb." },
+            { word: "Jump", translation: "Lompat", type: "verb", level: 1, hint: "Lompat adalah tindakan/gerakan meloncat, tergolong Verb (Kata Kerja)." },
+            { word: "Play", translation: "Bermain", type: "verb", level: 1, hint: "Bermain adalah aktivitas seru yang dilakukan, jadi masuk ke kategori Verb." },
+            { word: "Read", translation: "Membaca", type: "verb", level: 1, hint: "Membaca adalah kegiatan/tindakan melihat dan memahami tulisan, tergolong Verb." },
+            { word: "Sing", translation: "Menyanyi", type: "verb", level: 1, hint: "Menyanyi adalah tindakan melantunkan nada/lagu, masuk ke kategori Verb." },
+            { word: "Swim", translation: "Berenang", type: "verb", level: 1, hint: "Berenang adalah aktivitas bergerak di dalam air, jadi tergolong Verb." },
+            // Level 2 (Kata Lanjutan)
+            { word: "Listen", translation: "Mendengarkan", type: "verb", level: 2, hint: "Mendengarkan adalah tindakan menggunakan indra pendengaran, jadi tergolong Verb." },
+            { word: "Write", translation: "Menulis", type: "verb", level: 2, hint: "Menulis adalah tindakan/kegiatan membuat tulisan, tergolong Verb (Kata Kerja)." },
+            { word: "Speak", translation: "Berbicara", type: "verb", level: 2, hint: "Berbicara adalah tindakan mengucapkan kata-kata, tergolong Verb." },
+            { word: "Study", translation: "Belajar", type: "verb", level: 2, hint: "Belajar adalah kegiatan/aktivitas menambah ilmu, jadi masuk kategori Verb." },
+            { word: "Travel", translation: "Bepergian", type: "verb", level: 2, hint: "Bepergian adalah aktivitas perjalanan dari satu tempat ke tempat lain, tergolong Verb." },
+            { word: "Discover", translation: "Menemukan", type: "verb", level: 2, hint: "Menemukan adalah tindakan mendapatkan hal baru, jadi tergolong Verb." },
+            { word: "Imagine", translation: "Membayangkan", type: "verb", level: 2, hint: "Membayangkan adalah tindakan berfkir kreatif di pikiran, tergolong Verb." },
+
+            // --- ADJECTIVE (Kata Sifat) ---
+            // Level 1 (Kata Dasar)
+            { word: "Big", translation: "Besar", type: "adjective", level: 1, hint: "Besar mendeskripsikan ukuran suatu benda, jadi tergolong Kata Sifat (Adjective)." },
+            { word: "Happy", translation: "Senang", type: "adjective", level: 1, hint: "Senang menggambarkan perasaan atau kondisi seseorang, jadi tergolong Adjective." },
+            { word: "Red", translation: "Merah", type: "adjective", level: 1, hint: "Warna (seperti merah) memberikan ciri pada benda, sehingga termasuk Adjective." },
+            { word: "Fast", translation: "Cepat", type: "adjective", level: 1, hint: "Cepat mendeskripsikan sifat kecepatan gerakan, jadi termasuk Adjective." },
+            { word: "Cold", translation: "Dingin", type: "adjective", level: 1, hint: "Dingin menggambarkan sifat suhu udara atau benda, tergolong Adjective." },
+            { word: "Sad", translation: "Sedih", type: "adjective", level: 1, hint: "Sedih mendeskripsikan perasaan/kondisi emosi, jadi tergolong Adjective." },
+            { word: "Hot", translation: "Panas", type: "adjective", level: 1, hint: "Panas menggambarkan keadaan suhu, tergolong Adjective (Kata Sifat)." },
+            { word: "Good", translation: "Bagus", type: "adjective", level: 1, hint: "Bagus mendeskripsikan kualitas suatu benda/hal, jadi tergolong Adjective." },
+            // Level 2 (Kata Lanjutan)
+            { word: "Beautiful", translation: "Indah", type: "adjective", level: 2, hint: "Indah mendeskripsikan kecantikan/keindahan rupa, tergolong Adjective." },
+            { word: "Careful", translation: "Hati-hati", type: "adjective", level: 2, hint: "Hati-hati mendeskripsikan sifat/sikap seseorang, tergolong Adjective." },
+            { word: "Difficult", translation: "Sulit", type: "adjective", level: 2, hint: "Sulit mendeskripsikan tingkat kerumitan suatu hal, tergolong Adjective." },
+            { word: "Important", translation: "Penting", type: "adjective", level: 2, hint: "Penting mendeskripsikan sifat/keutamaan suatu hal, tergolong Adjective." },
+            { word: "Delicious", translation: "Lezat", type: "adjective", level: 2, hint: "Lezat mendeskripsikan rasa dari makanan, jadi tergolong Adjective." },
+            { word: "Dangerous", translation: "Berbahaya", type: "adjective", level: 2, hint: "Berbahaya mendeskripsikan sifat risiko suatu situasi, tergolong Adjective." },
+            { word: "Colorful", translation: "Berwarna-warni", type: "adjective", level: 2, hint: "Berwarna-warni mendeskripsikan corak tampilan, tergolong Adjective." }
+        ];
+
+        const categoryLabels = {
+            noun: "Noun (Kata Benda)",
+            verb: "Verb (Kata Kerja)",
+            adjective: "Adjective (Kata Sifat)"
+        };
+
+        let score = 0;
+        let currentLevel = 1;
+        let currentWordData = null;
+        let availableWords = [];
+        let isProcessing = false;
+
+        // Element DOM
+        const scoreDisplay = document.getElementById('score-display');
+        const levelDisplay = document.getElementById('level-display');
+        const wordCard = document.getElementById('word-card');
+        const engWordEl = document.getElementById('english-word');
+        const indoTransEl = document.getElementById('indo-translation');
+        const spawnArea = document.getElementById('spawn-area');
+        const baskets = document.querySelectorAll('.basket-zone');
+        const effectsContainer = document.getElementById('effects-container');
+        
+        // Modal DOM
+        const explanationModal = document.getElementById('explanation-modal');
+        const explanationCard = document.getElementById('explanation-card');
+        const explainWord = document.getElementById('explain-word');
+        const explainTrans = document.getElementById('explain-trans');
+        const explainText = document.getElementById('explain-text');
+        const explainCorrectCat = document.getElementById('explain-correct-cat');
+
+        const winModal = document.getElementById('win-modal');
+        const winContent = document.getElementById('win-content');
+
+        function initGame() {
+            score = 0;
+            currentLevel = 1;
+            updateScoreUI();
+            updateLevelUI();
+            filterAndShuffleWords();
+            winModal.classList.add('hidden');
+            winContent.classList.remove('scale-100', 'opacity-100');
+            explanationModal.classList.add('hidden');
+            spawnNextWord();
+        }
+
+        // Pengacakan kata (Fisher-Yates Shuffle) agar variasi kata tidak terulang berurutan
+        function filterAndShuffleWords() {
+            availableWords = wordBank.filter(w => w.level === currentLevel);
+            for (let i = availableWords.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [availableWords[i], availableWords[j]] = [availableWords[j], availableWords[i]];
+            }
+        }
+
+        function spawnNextWord() {
+            if (score >= 200) {
+                showWinScreen();
+                return;
+            }
+
+            if (availableWords.length === 0) {
+                filterAndShuffleWords();
+            }
+
+            currentWordData = availableWords.pop();
+            
+            engWordEl.textContent = currentWordData.word;
+            indoTransEl.textContent = `(${currentWordData.translation})`;
+            
+            resetCardPosition();
+            wordCard.className = 'absolute bg-white rounded-2xl shadow-xl border-4 border-sky-300 px-8 py-4 flex flex-col items-center justify-center pop-in z-30 min-w-[200px]';
+            wordCard.style.display = 'flex';
+            isProcessing = false;
+        }
+
+        function checkLevelUp() {
+            if (score >= 100 && score < 200 && currentLevel === 1) {
+                currentLevel = 2;
+                updateLevelUI();
+                filterAndShuffleWords();
+                showFeedback("Level Up! 🚀", 'text-purple-600', window.innerWidth / 2, window.innerHeight / 2);
+            }
+        }
+
+        function updateScoreUI() {
+            scoreDisplay.textContent = score;
+        }
+
+        function updateLevelUI() {
+            levelDisplay.textContent = `Level: ${currentLevel} ${currentLevel === 1 ? '(Kata Dasar)' : '(Lanjutan)'}`;
+        }
+
+        function handleDrop(basketType, dropX, dropY) {
+            if (isProcessing) return;
+            isProcessing = true;
+
+            const isCorrect = (basketType === currentWordData.type);
+
+            if (isCorrect) {
+                // JAWABAN BENAR
+                score += 10;
+                updateScoreUI();
+                showFeedback("Hebat! 🎉", 'text-emerald-500', dropX, dropY - 40);
+                
+                if (score % 50 === 0 && score < 200) {
+                    showStarReward();
+                }
+                
+                checkLevelUp();
+
+                // Animasi menyerap ke dalam keranjang
+                wordCard.style.transition = 'transform 0.25s ease, opacity 0.25s ease';
+                wordCard.style.transform = `${wordCard.style.transform} scale(0.3)`;
+                wordCard.style.opacity = '0';
+                
+                setTimeout(() => {
+                    spawnNextWord();
+                }, 280);
+
+            } else {
+                // JAWABAN SALAH
+                showFeedback("Oops, Coba Lagi! 💡", 'text-rose-500', dropX, dropY - 40);
+                wordCard.classList.add('shake-animation');
+                
+                setTimeout(() => {
+                    showExplanationModal();
+                }, 400);
+            }
+        }
+
+        function showFeedback(text, colorClass, x, y) {
+            const fb = document.createElement('div');
+            fb.textContent = text;
+            fb.className = `feedback-text ${colorClass}`;
+            fb.style.left = `${x}px`;
+            fb.style.top = `${y}px`;
+
+            effectsContainer.appendChild(fb);
+
+            setTimeout(() => {
+                if (effectsContainer.contains(fb)) {
+                    effectsContainer.removeChild(fb);
+                }
+            }, 1100);
+        }
+
+        function showStarReward() {
+            const star = document.createElement('div');
+            star.textContent = '🌟';
+            star.className = 'star-reward';
+            effectsContainer.appendChild(star);
+            
+            setTimeout(() => {
+                if (effectsContainer.contains(star)) {
+                    effectsContainer.removeChild(star);
+                }
+            }, 1300);
+        }
+
+        function showExplanationModal() {
+            explainWord.textContent = currentWordData.word;
+            explainTrans.textContent = `(${currentWordData.translation})`;
+            explainText.textContent = currentWordData.hint;
+            explainCorrectCat.textContent = categoryLabels[currentWordData.type];
+
+            explanationModal.classList.remove('hidden');
+            setTimeout(() => {
+                explanationCard.classList.remove('scale-90', 'opacity-0');
+                explanationCard.classList.add('scale-100', 'opacity-100');
+            }, 20);
+        }
+
+        window.closeExplanation = function() {
+            explanationCard.classList.remove('scale-100', 'opacity-100');
+            explanationCard.classList.add('scale-90', 'opacity-0');
+            setTimeout(() => {
+                explanationModal.classList.add('hidden');
+                resetCardPosition();
+                spawnNextWord();
+            }, 200);
+        };
+
+        function showWinScreen() {
+            wordCard.style.display = 'none';
+            winModal.classList.remove('hidden');
+            setTimeout(() => {
+                winContent.classList.remove('scale-90', 'opacity-0');
+                winContent.classList.add('scale-100', 'opacity-100');
+            }, 50);
+        }
+
+        window.resetGame = function() {
+            initGame();
+        };
+
+        let isDragging = false;
+        let startPointerX = 0, startPointerY = 0;
+        let currentTranslateX = 0, currentTranslateY = 0;
+
+        function resetCardPosition() {
+            currentTranslateX = 0;
+            currentTranslateY = 0;
+            wordCard.style.transition = 'none';
+            wordCard.style.transform = `translate(0px, 0px)`;
+            wordCard.classList.remove('shake-animation');
+        }
+
+        // Pengecekan overlap keranjang menggunakan Bounding Box Geometri
+        // KATA TIDAK AKAN PERNAH MENGHILANG SAMA SEKALI SAAT DRAGGING
+        function getOverlappingBasket(cardEl) {
+            const cardRect = cardEl.getBoundingClientRect();
+            const cardCenterX = cardRect.left + cardRect.width / 2;
+            const cardCenterY = cardRect.top + cardRect.height / 2;
+
+            for (const basket of baskets) {
+                const bRect = basket.getBoundingClientRect();
+                if (
+                    cardCenterX >= bRect.left &&
+                    cardCenterX <= bRect.right &&
+                    cardCenterY >= bRect.top &&
+                    cardCenterY <= bRect.bottom
+                ) {
+                    return basket;
+                }
+            }
+            return null;
+        }
+
+        function clearBasketHighlights() {
+            baskets.forEach(b => b.classList.remove('drag-over'));
+        }
+
+        wordCard.addEventListener('pointerdown', (e) => {
+            if (isProcessing) return;
+            isDragging = true;
+            wordCard.setPointerCapture(e.pointerId);
+            
+            startPointerX = e.clientX;
+            startPointerY = e.clientY;
+            
+            wordCard.classList.remove('pop-in');
+            wordCard.style.transition = 'none';
+            wordCard.style.zIndex = "1000";
+            wordCard.style.boxShadow = "0 20px 30px -5px rgba(0, 0, 0, 0.3)";
+        });
+
+        document.addEventListener('pointermove', (e) => {
+            if (!isDragging) return;
+            
+            const deltaX = e.clientX - startPointerX;
+            const deltaY = e.clientY - startPointerY;
+            
+            currentTranslateX = deltaX;
+            currentTranslateY = deltaY;
+            wordCard.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+
+            // Deteksi highlight keranjang secara simultan tanpa menyembunyikan kartu
+            const matchedBasket = getOverlappingBasket(wordCard);
+            clearBasketHighlights();
+            if (matchedBasket) {
+                matchedBasket.classList.add('drag-over');
+            }
+        });
+
+        document.addEventListener('pointerup', (e) => {
+            if (!isDragging) return;
+            isDragging = false;
+            try {
+                wordCard.releasePointerCapture(e.pointerId);
+            } catch (err) {}
+
+            wordCard.style.boxShadow = "";
+            
+            const matchedBasket = getOverlappingBasket(wordCard);
+            clearBasketHighlights();
+
+            if (matchedBasket) {
+                const basketType = matchedBasket.getAttribute('data-type');
+                const basketRect = matchedBasket.getBoundingClientRect();
+                handleDrop(basketType, basketRect.left + basketRect.width / 2, basketRect.top);
+            } else {
+                // Membalikan posisi kartu dengan animasi smooth jika tidak dilepas di keranjang
+                wordCard.style.transition = 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+                resetCardPosition();
+            }
+        });
+
+        wordCard.addEventListener('dragstart', (e) => e.preventDefault());
+
+        window.onload = () => {
+            setTimeout(() => {
+                initGame();
+            }, 250);
+        };
+    </script>
+</body>
+</html>
